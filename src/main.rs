@@ -1,36 +1,29 @@
+extern crate git2;
+
+use git2::Repository;
 use std::io;
 
-#[derive(Debug)]
-struct User<'a> {
-    first_name: &'a str,
-    surname: &'a str,
-}
-
-// This function takes a prompt referenced string which is borrowed
-// as it is declared outside of the function. It points to a specific utf-8 sequence and is therefore stack
-// allocated. The input however is a vector of bytes that is heap allocated. I borrow a mutable reference here.
-fn get_name<'a>(prompt: &'a str, input: &'a mut String) -> &'a str {
-    println!("Please enter a {}:", prompt);
-
-    io::stdin()
-        .read_line(input)
-        .expect("Failed to read line");
-
-    input.trim()
-}
-
 fn main() {
-    let mut x = String::new();
-    let mut y = String::new();
+    println!("Would you like to use the existing repository (Yes/No)?");
+    let mut input = String::new();
+    let mut input2 = String::new();
+    let path;
 
-    let first_name = get_name("first name", &mut x);
-    let surname = get_name("surname", &mut y);
+    io::stdin().read_line(&mut input).expect("Input not valid");
 
-    let user = User {
-        first_name,
-        surname
+    let option = input.trim().to_lowercase();
+    if option == "yes" {
+        path = String::from(".");
+    } else  {
+        println!("Please give a path to the repository you would like to use:");
+        io::stdin().read_line(&mut input2).expect("Input not valid");
+        path =   input2.trim().to_lowercase();
+    }
+
+    let repo = match Repository::open(path) {
+        Ok(repo) => repo,
+        Err(e) => panic!("failed to open: {}", e),
     };
 
-    println!("User is called: {} {}", user.first_name, user.surname);
-    println!("{:#?}", user);
+    println!("{} state={:?}", repo.path().display(), repo.state());
 }
