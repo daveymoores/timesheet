@@ -1,27 +1,9 @@
 extern crate git2;
 
-use git2::Repository;
+use std::env;
 use std::process;
-use std::{env, io};
 
-use timesheet::Config;
-
-fn use_existing_repository(option: Option<&str>) -> String {
-    match option {
-        Some("") => String::from("."),
-        Some("y") => String::from("."),
-        Some("n") => {
-            let mut input2 = String::new();
-            println!("Please give a path to the repository you would like to use:");
-            io::stdin().read_line(&mut input2).expect("Input not valid");
-            input2.trim().to_lowercase()
-        }
-        _ => {
-            println!("Invalid input. Falling back to current directory.");
-            ".".to_string()
-        }
-    }
-}
+use timesheet::{find_repository_details, read_input, use_existing_repository, Config, Repo};
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -35,8 +17,7 @@ fn main() {
 
     if let None = config.repository_path {
         println!("Initialise Timesheet for current repository? (Y/n)");
-        io::stdin().read_line(&mut input).expect("Input not valid");
-        let option = input.trim().to_lowercase();
+        let option = read_input(&mut input);
         path = use_existing_repository(Some(&option));
     }
 
@@ -45,10 +26,7 @@ fn main() {
         process::exit(1);
     }
 
-    let repo = match Repository::open(path) {
-        Ok(repo) => repo,
-        Err(e) => panic!("failed to open: {}", e),
-    };
+    let repo: Repo = find_repository_details(&*path);
 
-    println!("{} state={:?}", repo.path().display(), repo.state());
+    println!("namespace: {:?} path: {:?}", repo.namespace, repo.path);
 }

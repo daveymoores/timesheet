@@ -1,3 +1,6 @@
+use git2::Repository;
+use regex::Regex;
+use std::ffi::OsString;
 use std::{io, io::ErrorKind};
 
 #[derive(PartialEq, Debug)]
@@ -27,6 +30,60 @@ impl Config {
             repository_path,
         })
     }
+}
+
+// Creates a new repository struct after being sent data from git2.
+// It returns the namespace and path, but also init date for the repo and probably other stuff
+// Basically sanitise the data from git2 into something usable
+#[derive(PartialEq, Debug)]
+pub struct Repo {
+    pub namespace: String,
+    pub path: String,
+    //pub start_date: DateTime<Utc>,
+}
+
+//TODO: get date out of the repository object
+impl Repo {
+    pub fn new(repository: Repository) -> Repo {
+        let mut namespace = String::new();
+        // Get repo name by finding the name of the root directory
+        let path = repository.path().display().to_string();
+        let regex = Regex::new(r"([^/][\w\d]+)/\.git/").unwrap();
+        for cap in regex.captures_iter(repository.path().to_str().unwrap()) {
+            namespace = String::from(&cap[1]);
+        }
+        Repo { namespace, path }
+    }
+}
+
+pub fn read_input(input: &mut String) -> String {
+    io::stdin().read_line(input).expect("Input not valid");
+    input.trim().to_lowercase()
+}
+
+pub fn use_existing_repository(option: Option<&str>) -> String {
+    match option {
+        Some("") => String::from("."),
+        Some("y") => String::from("."),
+        Some("n") => {
+            let mut input = String::new();
+            println!("Please give a path to the repository you would like to use:");
+            read_input(&mut input)
+        }
+        _ => {
+            println!("Invalid input. Falling back to current directory.");
+            ".".to_string()
+        }
+    }
+}
+
+pub fn find_repository_details(path: &str) -> Repo {
+    let repo = match Repository::open(path) {
+        Ok(repo) => repo,
+        Err(e) => panic!("failed to open: {}", e),
+    };
+
+    Repo::new(repo)
 }
 
 #[cfg(test)]
@@ -66,14 +123,36 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
-    fn it_creates_a_config_struct_with_arguments() {}
+    fn it_returns_correct_output_from_use_existing_repository() {
+        struct TestOption<'a> {
+            input: Option<&'a str>,
+            output: String,
+        }
 
-    #[test]
-    #[ignore]
-    fn it_runs_and_creates_a_repository_struct() {}
+        let options: Vec<TestOption> = vec![
+            TestOption {
+                input: Option::from(""),
+                output: String::from("."),
+            },
+            TestOption {
+                input: Option::from("y"),
+                output: String::from("."),
+            },
+            TestOption {
+                input: Option::from("n"),
+                output: String::from("/path/to/repo"),
+            },
+            TestOption {
+                input: Option::from("foo"),
+                output: String::from("."),
+            },
+        ];
 
-    #[test]
-    #[ignore]
-    fn it_fails_finding_repository_and_returns_error() {}
+        for option in &options {
+            assert_eq!(
+                use_existing_repository(option.input, &mut option.output.as_bytes()),
+                option.output
+            );
+        }
+    }
 }
