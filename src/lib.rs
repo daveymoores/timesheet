@@ -1,11 +1,11 @@
 use git2::Repository;
-use regex::{Error, Regex};
+use regex;
+use serde::{Deserialize, Serialize};
+use serde_json;
+use std::error::Error;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::{env, io, io::ErrorKind, process};
-
-use serde::{Deserialize, Serialize};
-use serde_json;
 
 const CONFIG_FILE_NAME: &str = ".timesheet-gen.txt";
 
@@ -68,20 +68,27 @@ impl Config {
 pub struct Repo {
     pub namespace: String,
     pub path: String,
+    pub name: String,
+    pub email: String,
 }
 
 //TODO: get date out of the repository object
 impl Repo {
-    pub fn new(repository: Repository) -> Result<Repo, Error> {
+    pub fn new(repository: Repository, name: String, email: String) -> Result<Repo, regex::Error> {
         let mut namespace = String::new();
         // Get repo name by finding the name of the root directory
         let path = repository.path().display().to_string();
-        let regex = Regex::new(r"(?P<namespace>[^/][\w\d]+)/\.git/")?;
-        for cap in regex.captures_iter(repository.path().to_str().unwrap()) {
+        let reg = regex::Regex::new(r"(?P<namespace>[^/][\w\d]+)/\.git/")?;
+        for cap in reg.captures_iter(repository.path().to_str().unwrap()) {
             namespace = String::from(&cap["namespace"]);
         }
 
-        Ok(Repo { namespace, path })
+        Ok(Repo {
+            namespace,
+            path,
+            name,
+            email,
+        })
     }
 }
 
@@ -90,10 +97,9 @@ pub fn read_input(input: &mut String) -> String {
     input.trim().to_lowercase()
 }
 
-pub fn use_existing_repository(option: Option<&str>) -> String {
+pub fn use_current_repository(option: Option<&str>) -> String {
     match option {
-        Some("") => String::from("."),
-        Some("y") => String::from("."),
+        Some("") | Some("y") => String::from("."),
         Some("n") => {
             let mut input = String::new();
             println!("Please give a path to the repository you would like to use:");
@@ -106,36 +112,83 @@ pub fn use_existing_repository(option: Option<&str>) -> String {
     }
 }
 
-pub fn check_for_existing_config_file() {
+pub fn use_existing_configuration(option: Option<&str>) -> String {
+    match option {
+        Some("") | Some("y") => String::new(),
+        Some("n") => String::new(),
+        _ => {
+            println!("Invalid input. Exiting.");
+            process::exit(1);
+        }
+    }
+}
+
+// TODO learn what this Error type is doing
+pub fn check_for_existing_config_file() -> Result<(), Box<dyn Error>> {
     let path = get_filepath();
 
     match File::open(&path) {
-        Err(_) => println!("This looks like the first time you're running Timesheet."),
+        Err(_) => println!("This looks like the first time you're running timesheet-gen."),
         Ok(mut file) => {
-            let mut s = String::new();
-            match file.read_to_string(&mut s) {
-                Err(why) => panic!("couldn't read {}: {}", path, why),
-                Ok(_) => {
-                    let mut input = String::new();
-                    println!("We've found an existing configuration at:\n{}\n", path);
-                    println!("Would you like to use this configuration? (Y/n)");
-                    read_input(&mut input);
-                    process::exit(1);
-                }
-            }
+            let mut buffer = String::new();
+
+            file.read_to_string(&mut buffer)?;
+            let config_details: Repo = serde_json::from_str(&*buffer)?;
+
+            let mut input = String::new();
+
+            println!(
+                "timesheet-gen has found an existing configuration at:\n{}\n\
+            -------------------------------------------\n\
+            Name: {}\n\
+            Email: {}\n\
+            Project: {}\n\
+            Git path: {}\n\
+            -------------------------------------------\n\
+            Would you like to use this configuration? (Y/n)",
+                path,
+                config_details.name,
+                config_details.email,
+                config_details.namespace,
+                config_details.path
+            );
+
+            let option = read_input(&mut input);
+            use_existing_configuration(Some(&option));
+            process::exit(1);
         }
     };
+
+    Ok(())
 }
 
 // TODO - should consider using git2 "discover" so that a repository
 // can be suggested if the user isn't in the correct repository
 fn find_repository_details(path: &str) -> Repo {
-    let repo = match Repository::open(path) {
+    let mut name = String::new();
+    let mut email = String::new();
+
+    let repository = match Repository::open(path) {
         Ok(repo) => repo,
         Err(e) => panic!("failed to open: {}", e),
     };
 
-    Repo::new(repo).unwrap_or_else(|err| {
+    let cfg = match repository.config() {
+        Ok(config) => config,
+        Err(e) => panic!("failed to open: {}", e),
+    };
+
+    for entry in &cfg.entries(None).unwrap() {
+        let entry = entry.unwrap();
+        if entry.name().unwrap() == "user.name" {
+            name = String::from(entry.value().unwrap());
+        }
+        if entry.name().unwrap() == "user.email" {
+            email = String::from(entry.value().unwrap());
+        }
+    }
+
+    Repo::new(repository, name, email).unwrap_or_else(|err| {
         eprintln!("Repo not found: {}", err);
         process::exit(1);
     })
@@ -156,12 +209,12 @@ pub fn create_user_config(path: &str) {
     let path = get_filepath();
 
     let mut file = match File::create(&path) {
-        Err(why) => panic!("couldn't create {}: {}", path, why),
+        Err(e) => panic!("couldn't create {}: {}", path, e),
         Ok(file) => file,
     };
 
     match file.write_all(json.as_bytes()) {
-        Err(why) => panic!("couldn't write to {}: {}", path, why),
+        Err(e) => panic!("couldn't write to {}: {}", path, e),
         Ok(_) => println!("successfully wrote to {}", path),
     }
 }
@@ -180,6 +233,8 @@ mod tests {
         let mock_repo = Repo {
             namespace: String::from("timesheet"),
             path: String::from("/path/to/timesheet"),
+            name: String::from("Tom Jones"),
+            email: String::from("sex_bomb@gmail.com"),
         };
 
         let repo = Repo::new(repo);
