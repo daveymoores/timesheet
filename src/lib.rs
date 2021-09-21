@@ -1,6 +1,6 @@
 use git2::Repository;
 use regex::{Error, Regex};
-use std::{io, io::ErrorKind, process};
+use std::{env, io, io::ErrorKind, process};
 
 #[derive(PartialEq, Debug)]
 pub struct Config {
@@ -9,7 +9,7 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn new(args: &[String]) -> Result<Config, io::Error> {
+    pub fn new(mut args: env::Args) -> Result<Config, io::Error> {
         let argument_length = args.len();
 
         if argument_length <= 1 {
@@ -18,11 +18,18 @@ impl Config {
             return Err(not_enough_arguments);
         }
 
-        let command = args[1].clone();
-        let repository_path = match argument_length {
-            3 => Some(args[2].clone()),
-            _ => None,
+        args.next();
+        let command = match args.next() {
+            Some(arg) => arg,
+            None => {
+                return Err(io::Error::new(
+                    ErrorKind::InvalidInput,
+                    format!("Didn't get a query 'command'"),
+                ))
+            }
         };
+
+        let repository_path = args.next();
 
         Ok(Config {
             command,
@@ -94,38 +101,6 @@ pub fn find_repository_details(path: &str) -> Repo {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn it_creates_a_config_struct_with_path_option() {
-        let args: Vec<String> = vec![
-            String::from("target/debug/timesheet"),
-            String::from("init"),
-            String::from("/path/to/somewhere"),
-        ];
-        let config = Config::new(&args);
-        let values = config.as_ref().unwrap();
-
-        let mock_config = Config {
-            command: String::from("init"),
-            repository_path: Option::from(String::from("/path/to/somewhere")),
-        };
-
-        assert_eq!(values, &mock_config);
-    }
-
-    #[test]
-    fn it_creates_a_config_struct_without_a_path_option() {
-        let args: Vec<String> = vec![String::from("target/debug/timesheet"), String::from("init")];
-        let config = Config::new(&args);
-        let values = config.as_ref().unwrap();
-
-        let mock_config = Config {
-            command: String::from("init"),
-            repository_path: None,
-        };
-
-        assert_eq!(values, &mock_config);
-    }
 
     #[test]
     fn it_creates_a_repo_struct() {
