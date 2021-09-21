@@ -1,6 +1,5 @@
 use git2::Repository;
 use regex::Regex;
-use std::ffi::OsString;
 use std::{io, io::ErrorKind};
 
 #[derive(PartialEq, Debug)]
@@ -13,9 +12,9 @@ impl Config {
     pub fn new(args: &[String]) -> Result<Config, io::Error> {
         let argument_length = args.len();
 
-        if argument_length < 1 {
+        if argument_length <= 1 {
             let not_enough_arguments =
-                io::Error::new(ErrorKind::InvalidInput, format!("not enough arguments"));
+                io::Error::new(ErrorKind::InvalidInput, format!("Not enough arguments"));
             return Err(not_enough_arguments);
         }
 
@@ -77,6 +76,8 @@ pub fn use_existing_repository(option: Option<&str>) -> String {
     }
 }
 
+// TODO - should consider using git2 "discover" so that a repository
+// can be suggested if the user isn't in the correct repository
 pub fn find_repository_details(path: &str) -> Repo {
     let repo = match Repository::open(path) {
         Ok(repo) => repo,
@@ -123,36 +124,18 @@ mod tests {
     }
 
     #[test]
-    fn it_returns_correct_output_from_use_existing_repository() {
-        struct TestOption<'a> {
-            input: Option<&'a str>,
-            output: String,
-        }
+    fn it_creates_a_repo_struct() {
+        let repo = match Repository::open(".") {
+            Ok(repo) => repo,
+            Err(e) => panic!("failed to open: {}", e),
+        };
 
-        let options: Vec<TestOption> = vec![
-            TestOption {
-                input: Option::from(""),
-                output: String::from("."),
-            },
-            TestOption {
-                input: Option::from("y"),
-                output: String::from("."),
-            },
-            TestOption {
-                input: Option::from("n"),
-                output: String::from("/path/to/repo"),
-            },
-            TestOption {
-                input: Option::from("foo"),
-                output: String::from("."),
-            },
-        ];
+        let mock_repo = Repo {
+            namespace: String::from("timesheet"),
+            path: String::from("/path/to/timesheet"),
+        };
 
-        for option in &options {
-            assert_eq!(
-                use_existing_repository(option.input, &mut option.output.as_bytes()),
-                option.output
-            );
-        }
+        let repo = Repo::new(repo);
+        assert_eq!(repo.namespace, mock_repo.namespace);
     }
 }
