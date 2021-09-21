@@ -45,7 +45,6 @@ impl Config {
 pub struct Repo {
     pub namespace: String,
     pub path: String,
-    //pub start_date: DateTime<Utc>,
 }
 
 //TODO: get date out of the repository object
@@ -54,9 +53,9 @@ impl Repo {
         let mut namespace = String::new();
         // Get repo name by finding the name of the root directory
         let path = repository.path().display().to_string();
-        let regex = Regex::new(r"([^/][\w\d]+)/\.git/")?;
+        let regex = Regex::new(r"(?P<namespace>[^/][\w\d]+)/\.git/")?;
         for cap in regex.captures_iter(repository.path().to_str().unwrap()) {
-            namespace = String::from(&cap[1]);
+            namespace = String::from(&cap["namespace"]);
         }
 
         Ok(Repo { namespace, path })
