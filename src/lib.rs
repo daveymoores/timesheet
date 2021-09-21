@@ -1,6 +1,6 @@
 use git2::Repository;
-use regex::Regex;
-use std::{io, io::ErrorKind};
+use regex::{Error, Regex};
+use std::{io, io::ErrorKind, process};
 
 #[derive(PartialEq, Debug)]
 pub struct Config {
@@ -43,15 +43,16 @@ pub struct Repo {
 
 //TODO: get date out of the repository object
 impl Repo {
-    pub fn new(repository: Repository) -> Repo {
+    pub fn new(repository: Repository) -> Result<Repo, Error> {
         let mut namespace = String::new();
         // Get repo name by finding the name of the root directory
         let path = repository.path().display().to_string();
-        let regex = Regex::new(r"([^/][\w\d]+)/\.git/").unwrap();
+        let regex = Regex::new(r"([^/][\w\d]+)/\.git/")?;
         for cap in regex.captures_iter(repository.path().to_str().unwrap()) {
             namespace = String::from(&cap[1]);
         }
-        Repo { namespace, path }
+
+        Ok(Repo { namespace, path })
     }
 }
 
@@ -84,7 +85,10 @@ pub fn find_repository_details(path: &str) -> Repo {
         Err(e) => panic!("failed to open: {}", e),
     };
 
-    Repo::new(repo)
+    Repo::new(repo).unwrap_or_else(|err| {
+        eprintln!("Repo not found: {}", err);
+        process::exit(1);
+    })
 }
 
 #[cfg(test)]
