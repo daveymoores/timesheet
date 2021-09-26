@@ -3,6 +3,7 @@ use std::env;
 use std::process;
 
 mod config;
+mod db;
 mod repo;
 mod utils;
 

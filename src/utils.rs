@@ -5,6 +5,8 @@ use git2::Repository;
 use std::error::Error;
 use std::process;
 
+use random_string::generate;
+
 #[derive(Debug)]
 pub enum Commands {
     Init,
@@ -23,8 +25,12 @@ impl std::str::FromStr for Commands {
     }
 }
 
-// TODO - should consider using git2 "discover" so that a repository
-// can be suggested if the user isn't in the correct repository
+pub fn generate_random_path() -> String {
+    let charset = "0123456789abcdefghijklmnopqrstuvwxyz";
+    generate(10, charset)
+}
+
+// TODO - should consider using git2 "discover" so that a repository can be suggested
 pub fn find_repository_details(path: &str) -> Result<repo::Repo, Box<dyn Error>> {
     let mut name = String::new();
     let mut email = String::new();
@@ -50,13 +56,11 @@ pub fn run(config: config::Config) {
     // Match the command against an enum of cli commands
     let command: Commands = config.command.parse().unwrap();
     match command {
-        Commands::Init => config
-            .check_for_existing_config_file()
-            .unwrap_or_else(|err| {
-                eprintln!("Error parsing configuration: {}", err);
-                process::exit(1);
-            }),
-        Commands::Make => config.generate_timesheet().unwrap_or_else(|err| {
+        Commands::Init => config.initialise().unwrap_or_else(|err| {
+            eprintln!("Error parsing configuration: {}", err);
+            process::exit(1);
+        }),
+        Commands::Make => config.make().unwrap_or_else(|err| {
             eprintln!("Error generating timesheet: {}", err);
             process::exit(1);
         }),

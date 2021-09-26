@@ -1,11 +1,21 @@
+extern crate bson;
+use mongodb::bson::doc;
+use mongodb::options::IndexOptions;
+use mongodb::IndexModel;
 use std::error::Error;
 use std::fs::File;
 use std::io::{ErrorKind, Read};
 use std::path::PathBuf;
 use std::{env, io, process};
+use tokio;
 
+use crate::db;
 use crate::repo;
+
+use crate::db::Db;
+use chrono::Utc;
 use git2::Repository;
+use std::time::Duration;
 
 const CONFIG_FILE_NAME: &str = ".timesheet-gen.txt";
 
@@ -52,12 +62,12 @@ impl Config {
         })
     }
 
-    pub fn get_filepath(&self) -> String {
+    fn get_filepath(&self) -> String {
         let home_string = self.home_path.to_str();
         home_string.unwrap().to_owned() + "/" + CONFIG_FILE_NAME
     }
 
-    pub fn check_for_existing_config_file(&self) -> Result<(), Box<dyn Error>> {
+    fn find_user_data(&self) -> Result<repo::Repo, Box<dyn Error>> {
         let config_path = self.get_filepath();
         let mut buffer = String::new();
 
@@ -81,16 +91,19 @@ impl Config {
             Some(config_details.namespace),
         )?;
 
+        Ok(repo)
+    }
+
+    pub fn initialise(&self) -> Result<(), Box<dyn Error>> {
+        let repo = self.find_user_data()?;
+        // show the user the contents of the config file
+        // and prompt as to whether this file should be used
         self.prompt_for_config_use(repo);
         Ok(())
     }
 
     // TODO allow the user to edit these values
-    pub fn create_user_config(
-        &self,
-        path: &str,
-        config_path: &String,
-    ) -> Result<(), Box<dyn Error>> {
+    fn create_user_config(&self, path: &str, config_path: &String) -> Result<(), Box<dyn Error>> {
         let repo: repo::Repo =
             crate::utils::find_repository_details(&*path).unwrap_or_else(|err| {
                 eprintln!("Couldn't find repository details: {}", err);
@@ -129,7 +142,7 @@ impl Config {
             });
     }
 
-    pub fn prompt_for_config_use(&self, repo: repo::Repo) {
+    fn prompt_for_config_use(&self, repo: repo::Repo) {
         let config_path = self.get_filepath();
 
         println!(
@@ -149,7 +162,7 @@ impl Config {
         process::exit(1);
     }
 
-    pub fn use_existing_configuration(&self, option: Option<&str>) -> String {
+    fn use_existing_configuration(&self, option: Option<&str>) -> String {
         match option {
             Some("") | Some("y") => String::new(),
             Some("n") => String::new(),
@@ -160,7 +173,7 @@ impl Config {
         }
     }
 
-    pub fn use_current_repository(&self) -> String {
+    fn use_current_repository(&self) -> String {
         let input = self.read_input();
         let option = Option::from(&*input);
         match option {
@@ -176,13 +189,59 @@ impl Config {
         }
     }
 
-    pub fn read_input(&self) -> String {
+    fn read_input(&self) -> String {
         let mut input: String = String::new();
         io::stdin().read_line(&mut input).expect("Input not valid");
         input.trim().to_lowercase()
     }
 
-    pub fn generate_timesheet(&self) -> Result<(), Box<dyn Error>> {
-        Ok(())
+    #[tokio::main]
+    pub async fn make(&self) -> Result<(), Box<dyn Error>> {
+        println!("Generating timesheet...");
+        let user_data: repo::Repo = self.find_user_data()?;
+        // set environment vars
+        // connect to mongodb
+        // generate random string to use as path
+        // check for existing random string. If it exists, generate another
+        // push config file as json into storage
+        // set TTF in mongodb and trash this after 30 minutes
+        // get back random string and create path
+        // output path to user - e.g https://timesheet-gen.io/jh57y84hk
+
+        let db: Db = db::Db::new().await?;
+        let collection = db
+            .client
+            .database("timesheet-gen")
+            .collection("timesheet-temp-paths");
+
+        let random_path = db.generate_random_path(&collection).await?;
+
+        let timesheet = doc! {
+            "creation_date": Utc::now(),
+            "random_path": &random_path,
+            "name" : user_data.name,
+            "email" : user_data.email,
+            "namespace" : user_data.namespace,
+            "path" : user_data.path,
+        };
+
+        let index_model = IndexModel::builder()
+            .keys(doc! {"creation_date": 1})
+            .options(
+                IndexOptions::builder()
+                    .expire_after(Duration::new(180, 0))
+                    .build(),
+            )
+            .build();
+
+        &collection.create_index(index_model, None);
+        collection.insert_one(timesheet.clone(), None).await?;
+
+        println!(
+            "Timesheet now available for 30 minutes @ https://timesheet-gen.io/{}",
+            &random_path
+        );
+
+        process::exit(exitcode::OK);
     }
 }
