@@ -7,7 +7,7 @@ use crate::mock_repo_dep::MockRepository as Repository;
 use git2::Repository;
 
 use std::error::Error;
-use std::process;
+use std::{io, process};
 
 use random_string::generate;
 
@@ -47,7 +47,21 @@ pub fn find_repository_details(path: &str) -> Result<repo::Repo, Box<dyn Error>>
         }
     }
 
-    Ok(repo::Repo::new(path, name, email, None)?)
+    Ok(repo::Repo::new(
+        None,
+        path,
+        name,
+        email,
+        "".to_string(),
+        "".to_string(),
+        "".to_string(),
+    )?)
+}
+
+pub fn read_input() -> String {
+    let mut input: String = String::new();
+    io::stdin().read_line(&mut input).expect("Input not valid");
+    input.trim().to_lowercase()
 }
 
 pub fn run<T: Make + Initialise + GetCommand>(config: T) {
@@ -155,10 +169,13 @@ mod tests {
     #[test]
     fn it_find_repository_details() {
         let repo = repo::Repo::new(
+            None,
             Path::new("/path/to/.git/"),
             "Tom Jones".to_string(),
             "sex_bomb@gmail.com".to_string(),
-            None,
+            "".to_string(),
+            "".to_string(),
+            "".to_string(),
         );
         assert_eq!(
             find_repository_details("/path/to/.git/").unwrap(),

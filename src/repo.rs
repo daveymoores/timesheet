@@ -1,5 +1,7 @@
+use crate::utils;
 use exitcode;
 use regex;
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::fs::File;
@@ -16,20 +18,27 @@ pub struct Repo {
     pub path: String,
     pub name: String,
     pub email: String,
+    pub client_name: String,
+    pub contact_person: String,
+    pub address: String,
 }
 
 //TODO: get date out of the repository object
 impl Repo {
     pub fn new(
+        repo_name: Option<String>,
         git_filepath: &Path,
         name: String,
         email: String,
-        repo_name: Option<String>,
+        client_name: String,
+        contact_person: String,
+        address: String,
     ) -> Result<Repo, regex::Error> {
         let mut namespace = String::new();
         // Get repo name by finding the name of the root directory
         let path = git_filepath.display().to_string();
 
+        // TODO this will fail at runtime if the git path is incorrect
         match repo_name {
             Some(arg) => namespace = arg,
             None => {
@@ -50,7 +59,45 @@ impl Repo {
             path,
             name,
             email,
+            client_name,
+            contact_person,
+            address,
         })
+    }
+
+    pub fn prompt_for_client_details(&mut self) -> &Repo {
+        println!("Would you like to add a client for this repository? Y/n");
+        self.use_client_option();
+        self
+    }
+
+    fn use_client_option(&mut self) {
+        let input = utils::read_input();
+        let option = Option::from(&*input);
+        match option {
+            Some("") | Some("y") => self.input_client_option(),
+            Some("n") => {}
+            _ => {
+                println!("Invalid input.");
+                process::exit(exitcode::DATAERR);
+            }
+        };
+    }
+
+    fn input_client_option(&mut self) {
+        println!("Client name:");
+        let client_name = utils::read_input();
+        self.client_name = client_name;
+
+        println!("Client contact person name:");
+        let contact_person = utils::read_input();
+        self.contact_person = contact_person;
+
+        println!("Address (comma seperated):");
+        let address = utils::read_input();
+        let regex = Regex::new(r",\s*").unwrap();
+        let result = regex.replace_all(&address, ",\n");
+        self.address = String::from(result);
     }
 
     pub fn write_config_file(&self, config_path: &String) -> Result<(), Box<dyn Error>> {
@@ -82,13 +129,19 @@ mod tests {
             path: String::from("/path/to/timesheet"),
             name: String::from("Tom Jones"),
             email: String::from("sex_bomb@gmail.com"),
+            client_name: "".to_string(),
+            contact_person: "".to_string(),
+            address: "".to_string(),
         };
 
         let repo = Repo::new(
+            None,
             repo.path(),
             "Tom Jones".to_string(),
             "sex_bomb@gmail.com".to_string(),
-            None,
+            "".to_string(),
+            "".to_string(),
+            "".to_string(),
         );
         assert_eq!(repo.unwrap().namespace, mock_repo.namespace);
     }

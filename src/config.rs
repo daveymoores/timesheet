@@ -9,8 +9,8 @@ use std::path::PathBuf;
 use std::{env, io, process};
 use tokio;
 
-use crate::db;
 use crate::repo;
+use crate::{db, utils};
 
 use crate::db::Db;
 use chrono::Utc;
@@ -83,6 +83,9 @@ impl Make for Config {
             "email" : user_data.email,
             "namespace" : user_data.namespace,
             "path" : user_data.path,
+            "client_name" : user_data.client_name,
+            "client_contact_person" : user_data.contact_person,
+            "address" : user_data.address,
         };
 
         let index_model = IndexModel::builder()
@@ -201,10 +204,13 @@ impl Config {
         let repository = Repository::open(config_details.path)?;
         let path = repository.path();
         let repo = repo::Repo::new(
+            Some(config_details.namespace),
             path,
             config_details.name,
             config_details.email,
-            Some(config_details.namespace),
+            config_details.client_name,
+            config_details.contact_person,
+            config_details.address,
         )?;
 
         Ok(repo)
@@ -212,16 +218,18 @@ impl Config {
 
     // TODO allow the user to edit these values
     fn create_user_config(&self, path: &str, config_path: &String) -> Result<(), Box<dyn Error>> {
-        let repo: repo::Repo =
+        let mut repo: repo::Repo =
             crate::utils::find_repository_details(&*path).unwrap_or_else(|err| {
                 eprintln!("Couldn't find repository details: {}", err);
                 process::exit(1);
             });
 
-        repo.write_config_file(&config_path).unwrap_or_else(|err| {
-            eprintln!("Couldn't write to configuration file: {}", err);
-            process::exit(1);
-        });
+        repo.prompt_for_client_details()
+            .write_config_file(&config_path)
+            .unwrap_or_else(|err| {
+                eprintln!("Couldn't write to configuration file: {}", err);
+                process::exit(1);
+            });
 
         Ok(())
     }
@@ -231,51 +239,56 @@ impl Config {
 
         println!(
             "timesheet-gen has found an existing configuration at:\n{}\n\
-            -------------------------------------------\n\
+            \n\
             Name: {}\n\
             Email: {}\n\
             Project: {}\n\
             Git path: {}\n\
-            -------------------------------------------\n\
+            Client: {}\n\
+            Client Contact person: {}\n\
+            Client Address: \n\
+            {}
+            \n\
             Would you like to use this configuration? (Y/n)",
-            config_path, repo.name, repo.email, repo.namespace, repo.path
+            config_path,
+            repo.name,
+            repo.email,
+            repo.namespace,
+            repo.path,
+            repo.client_name,
+            repo.contact_person,
+            repo.address
         );
 
-        let option = self.read_input();
+        let option = utils::read_input();
         self.use_existing_configuration(Some(&option));
         process::exit(1);
     }
 
-    fn use_existing_configuration(&self, option: Option<&str>) -> String {
+    fn use_existing_configuration(&self, option: Option<&str>) {
         match option {
-            Some("") | Some("y") => String::new(),
-            Some("n") => String::new(),
+            Some("") | Some("y") => process::exit(exitcode::OK),
+            Some("n") => self.onboarding(),
             _ => {
                 println!("Invalid input. Exiting.");
                 process::exit(1);
             }
-        }
+        };
     }
 
     fn use_current_repository(&self) -> String {
-        let input = self.read_input();
+        let input = utils::read_input();
         let option = Option::from(&*input);
         match option {
             Some("") | Some("y") => String::from("."),
             Some("n") => {
                 println!("Please give a path to the repository you would like to use:");
-                self.read_input()
+                utils::read_input()
             }
             _ => {
                 println!("Invalid input. Falling back to current directory.");
                 ".".to_string()
             }
         }
-    }
-
-    fn read_input(&self) -> String {
-        let mut input: String = String::new();
-        io::stdin().read_line(&mut input).expect("Input not valid");
-        input.trim().to_lowercase()
     }
 }
