@@ -13,7 +13,8 @@ use crate::repo;
 use crate::{db, utils};
 
 use crate::db::Db;
-use chrono::Utc;
+use chrono::format::Fixed::LongMonthName;
+use chrono::{self, Datelike, Month, Utc};
 use git2::Repository;
 use std::time::Duration;
 
@@ -57,7 +58,8 @@ impl GetCommand for Config {
 impl Make for Config {
     #[tokio::main]
     async fn make(&self) -> Result<(), Box<dyn Error>> {
-        println!("Generating timesheet...");
+        println!("Generating timesheet for {}...", self.parse_month_string());
+
         let user_data: repo::Repo = self.find_user_data()?;
         // set environment vars
         // connect to mongodb
@@ -179,6 +181,26 @@ impl Config {
             repository_path,
             home_path,
         })
+    }
+
+    fn parse_month_string(&self) -> String {
+        let months: Vec<&str> = vec![
+            "January",
+            "February",
+            "March",
+            "April",
+            "May",
+            "June",
+            "July",
+            "August",
+            "September",
+            "October",
+            "November",
+            "December",
+        ];
+
+        let month_num = Utc::now().month() as usize;
+        months[month_num].replace("\"", "")
     }
 
     fn get_filepath(&self) -> String {
