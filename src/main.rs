@@ -4,6 +4,7 @@ use std::process;
 
 mod config;
 mod db;
+mod mock_repo_dep;
 mod repo;
 mod utils;
 

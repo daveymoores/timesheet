@@ -34,8 +34,13 @@ impl Repo {
             Some(arg) => namespace = arg,
             None => {
                 let reg = regex::Regex::new(r"(?P<namespace>[^/][\w\d]+)/\.git/")?;
-                for cap in reg.captures_iter(&git_filepath.to_str().unwrap()) {
-                    namespace = String::from(&cap["namespace"]);
+                if let Some(cap) = reg
+                    .captures(&git_filepath.to_str().unwrap())
+                    .unwrap()
+                    .name("namespace")
+                {
+                    // parse into String
+                    namespace = (&cap.as_str()).parse().unwrap();
                 }
             }
         };

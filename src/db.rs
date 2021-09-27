@@ -1,10 +1,8 @@
-use crate::repo::Repo;
 use futures::TryStreamExt;
 use mongodb::options::{ClientOptions, ResolverConfig};
 use mongodb::{bson::doc, options::FindOptions};
 use mongodb::{Client, Collection};
 use serde::de::DeserializeOwned;
-use std::borrow::Borrow;
 use std::env;
 use std::error::Error;
 

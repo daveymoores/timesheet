@@ -1,17 +1,15 @@
-use crate::config;
+use crate::config::{Commands, GetCommand, Initialise, Make};
 use crate::repo;
 
+#[cfg(test)]
+use crate::mock_repo_dep::MockRepository as Repository;
+#[cfg(not(test))]
 use git2::Repository;
+
 use std::error::Error;
 use std::process;
 
 use random_string::generate;
-
-#[derive(Debug)]
-pub enum Commands {
-    Init,
-    Make,
-}
 
 impl std::str::FromStr for Commands {
     type Err = String;
@@ -52,9 +50,9 @@ pub fn find_repository_details(path: &str) -> Result<repo::Repo, Box<dyn Error>>
     Ok(repo::Repo::new(path, name, email, None)?)
 }
 
-pub fn run(config: config::Config) {
+pub fn run<T: Make + Initialise + GetCommand>(config: T) {
     // Match the command against an enum of cli commands
-    let command: Commands = config.command.parse().unwrap();
+    let command: Commands = config.get_command();
     match command {
         Commands::Init => config.initialise().unwrap_or_else(|err| {
             eprintln!("Error parsing configuration: {}", err);
@@ -66,15 +64,105 @@ pub fn run(config: config::Config) {
         }),
     }
 
-    // If command isn't found, go through on boarding process
-    // and generate timesheet config file
-    config.onboarding();
+    // If command isn't found, show help or suggest command somehow
+    println!("Command not found. Run 'timesheet-gen help' for list of commands")
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use regex;
+    use std::path::{Path, PathBuf};
 
     #[test]
-    fn test_find_repository_details() {}
+    fn it_generates_a_random_string() {
+        let random_string = generate_random_path();
+        let regex = regex::Regex::new(r"^[a-z0-9]{10}$");
+        match regex.unwrap().find(&*random_string) {
+            Some(_x) => assert!(true),
+            None => panic!("Pattern not matched"),
+        }
+    }
+
+    #[test]
+    fn it_runs_with_make_and_calls_make() {
+        pub struct MockConfig {
+            pub command: String,
+            pub repository_path: Option<String>,
+            pub home_path: PathBuf,
+        }
+
+        impl Make for MockConfig {
+            fn make(&self) -> Result<(), Box<dyn Error>> {
+                assert!(true);
+                process::exit(exitcode::OK);
+            }
+        }
+
+        impl Initialise for MockConfig {
+            fn initialise(&self) -> Result<(), Box<dyn Error>> {
+                panic!("Wrong function called for command");
+            }
+        }
+
+        impl GetCommand for MockConfig {
+            fn get_command(&self) -> Commands {
+                Commands::Make
+            }
+        }
+
+        run(MockConfig {
+            command: "make".to_string(),
+            repository_path: Option::from("path/to/.git/".to_string()),
+            home_path: Default::default(),
+        });
+    }
+
+    #[test]
+    fn it_runs_with_init_and_calls_init() {
+        pub struct MockConfig {
+            pub command: String,
+            pub repository_path: Option<String>,
+            pub home_path: PathBuf,
+        }
+
+        impl Make for MockConfig {
+            fn make(&self) -> Result<(), Box<dyn Error>> {
+                panic!("Wrong function called for command");
+            }
+        }
+
+        impl Initialise for MockConfig {
+            fn initialise(&self) -> Result<(), Box<dyn Error>> {
+                assert!(true);
+                process::exit(exitcode::OK);
+            }
+        }
+
+        impl GetCommand for MockConfig {
+            fn get_command(&self) -> Commands {
+                Commands::Init
+            }
+        }
+
+        run(MockConfig {
+            command: "init".to_string(),
+            repository_path: Option::from("path/to/.git/".to_string()),
+            home_path: Default::default(),
+        });
+    }
+
+    #[test]
+    fn it_find_repository_details() {
+        let repo = repo::Repo::new(
+            Path::new("/path/to/.git/"),
+            "Tom Jones".to_string(),
+            "sex_bomb@gmail.com".to_string(),
+            None,
+        );
+        assert_eq!(
+            find_repository_details("/path/to/.git/").unwrap(),
+            repo.unwrap()
+        );
+    }
 }
