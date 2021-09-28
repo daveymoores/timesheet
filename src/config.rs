@@ -3,7 +3,7 @@ use mongodb::bson::doc;
 use std::error::Error;
 use std::fs::File;
 use std::io::{ErrorKind, Read};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::{env, io, process};
 use tokio;
 
@@ -12,6 +12,10 @@ use crate::{db, utils};
 
 use chrono::{self, Datelike, Utc};
 use git2::Repository;
+use regex::{Captures, Match, SubCaptureMatches};
+use serde_json::{json, Map, Value};
+use std::collections::{HashMap, HashSet};
+use std::process::Command;
 
 const CONFIG_FILE_NAME: &str = ".timesheet-gen.txt";
 
@@ -53,6 +57,7 @@ impl GetCommand for Config {
 impl Make for Config {
     #[tokio::main]
     async fn make(&self) -> Result<(), Box<dyn Error>> {
+        let expire_time_seconds = 1800;
         println!("Generating timesheet for {}...", self.parse_month_string());
 
         let user_data: repo::Repo = self.find_user_data()?;
@@ -99,7 +104,7 @@ impl Make for Config {
                             {
                                 "key": { "creation_date": 1 },
                                 "name": "expiration_date",
-                                "expireAfterSeconds": 1800,
+                                "expireAfterSeconds": expire_time_seconds,
                                 "unique": true
                             },
                         ]
@@ -112,7 +117,8 @@ impl Make for Config {
         collection.insert_one(timesheet.clone(), None).await?;
 
         println!(
-            "Timesheet now available for 30 minutes @ https://timesheet-gen.io/{}",
+            "Timesheet now available for {} minutes @ https://timesheet-gen.io/{}",
+            expire_time_seconds / 60,
             &random_path
         );
 
@@ -234,6 +240,7 @@ impl Config {
         let config_details: repo::Repo = serde_json::from_str(&*buffer)?;
         let repository = Repository::open(config_details.path)?;
         let path = repository.path();
+        self.build_months_from_git_log(&config_details.name, path)?;
         let repo = repo::Repo::new(
             Some(config_details.namespace),
             path,
@@ -245,6 +252,79 @@ impl Config {
         )?;
 
         Ok(repo)
+    }
+
+    // TODO not performant to have regex here. Consider memoization through lazy static
+    fn build_months_from_git_log(&self, name: &String, path: &Path) -> Result<(), Box<dyn Error>> {
+        let command = String::from("--author");
+        let author = [command, name.to_owned()].join("=");
+        let output = Command::new("git")
+            .arg("-C")
+            .arg(path)
+            .arg("log")
+            .arg(author)
+            .arg("--all")
+            .output()
+            .expect("Failed to execute command");
+
+        //captures the longform date from commits
+        let date_regex =
+            regex::Regex::new(r"([\w]{3}\s){2}[\d]{1,2}\s(\d+:?){3}\s\d{4}\s[+|-]?\d{4}")?;
+
+        let output_string = String::from_utf8(output.stdout)?;
+
+        // use a hashset here as we only want unique dates
+        let matches: HashSet<&str> = date_regex
+            .find_iter(&*output_string)
+            .map(|x| x.as_str())
+            .collect();
+
+        println!("{:#?}", matches);
+
+        // group commit dates by year and by month
+        let year_regex = regex::Regex::new(r"(\s(20|19){1}[0-9]{2}\s)")?;
+        let year_matches: HashSet<&str> = year_regex
+            .find_iter(&*output_string)
+            .map(|x| x.as_str().trim())
+            .collect();
+
+        let mut year_map = Map::new();
+
+        // create json to represent the years/months/days for each for each of the dates in the commit
+        for year in year_matches.iter() {
+            let mut month_map = Map::new();
+            let month_regex = format!(
+                r"([a-zA-Z]{{3}})\s(?P<month>[a-zA-Z]{{3}})\s(\d{{1,2}})\s(\d+:?){{3}}\s{}",
+                year
+            );
+
+            let month_matches = utils::find_named_matches(month_regex, &output_string);
+
+            for month in month_matches.iter() {
+                let mut day_map = Map::new();
+                let day_regex = format!(
+                    r"([a-zA-Z]{{3}})\s{}\s(?P<day>\d{{1,2}})\s(\d+:?){{3}}\s{}",
+                    month, year
+                );
+
+                let day_matches = utils::find_named_matches(day_regex, &output_string);
+
+                for day in day_matches.iter() {
+                    let object = json!({
+                        "hours" : 8,
+                    });
+
+                    day_map.insert(day.to_string(), Value::from(object));
+                }
+
+                month_map.insert(month.to_string(), Value::from(day_map));
+            }
+
+            year_map.insert(year.to_string(), Value::Object(month_map));
+        }
+
+        println!("{:#?}", year_map);
+        Ok(())
     }
 
     // TODO allow the user to edit these values
@@ -291,7 +371,7 @@ impl Config {
             repo.address
         );
 
-        let option = utils::read_input();
+        let option = utils::read_input().to_lowercase();
         self.use_existing_configuration(Some(&option));
         process::exit(1);
     }
@@ -308,7 +388,7 @@ impl Config {
     }
 
     fn use_current_repository(&self) -> String {
-        let input = utils::read_input();
+        let input = utils::read_input().to_lowercase();
         let option = Option::from(&*input);
         match option {
             Some("") | Some("y") => String::from("."),

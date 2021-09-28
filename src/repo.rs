@@ -72,7 +72,7 @@ impl Repo {
     }
 
     fn use_client_option(&mut self) {
-        let input = utils::read_input();
+        let input = utils::read_input().to_lowercase();
         let option = Option::from(&*input);
         match option {
             Some("") | Some("y") => self.input_client_option(),
@@ -87,11 +87,11 @@ impl Repo {
     fn input_client_option(&mut self) {
         println!("Client name:");
         let client_name = utils::read_input();
-        self.client_name = client_name;
+        self.client_name = String::from(client_name);
 
         println!("Client contact person name:");
         let contact_person = utils::read_input();
-        self.contact_person = contact_person;
+        self.contact_person = String::from(contact_person);
 
         println!("Address (comma seperated):");
         let address = utils::read_input();

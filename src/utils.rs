@@ -6,10 +6,13 @@ use crate::mock_repo_dep::MockRepository as Repository;
 #[cfg(not(test))]
 use git2::Repository;
 
+use serde_json::json;
+
 use std::error::Error;
 use std::{io, process};
 
 use random_string::generate;
+use std::collections::HashSet;
 
 impl std::str::FromStr for Commands {
     type Err = String;
@@ -61,7 +64,7 @@ pub fn find_repository_details(path: &str) -> Result<repo::Repo, Box<dyn Error>>
 pub fn read_input() -> String {
     let mut input: String = String::new();
     io::stdin().read_line(&mut input).expect("Input not valid");
-    input.trim().to_lowercase()
+    String::from(input.trim())
 }
 
 pub fn run<T: Make + Initialise + GetCommand>(config: T) {
@@ -80,6 +83,23 @@ pub fn run<T: Make + Initialise + GetCommand>(config: T) {
 
     // If command isn't found, show help or suggest command somehow
     println!("Command not found. Run 'timesheet-gen help' for list of commands")
+}
+
+// TODO matching is expensive, need to memoize these calls
+pub fn find_named_matches(dynamic_regex_string: String, string_to_match: &String) -> HashSet<&str> {
+    let regex = regex::Regex::new(&*dynamic_regex_string.as_str()).unwrap();
+
+    regex
+        .captures_iter(&string_to_match)
+        .map(|caps| {
+            regex
+                .capture_names()
+                .map(|o| o.and_then(|n| Some(caps.name(n)?.as_str())))
+                .flatten()
+                .collect::<Vec<&str>>()
+        })
+        .flatten()
+        .collect()
 }
 
 #[cfg(test)]
