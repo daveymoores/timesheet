@@ -1,7 +1,5 @@
 extern crate bson;
 use mongodb::bson::doc;
-use mongodb::options::IndexOptions;
-use mongodb::IndexModel;
 use std::error::Error;
 use std::fs::File;
 use std::io::{ErrorKind, Read};
@@ -12,11 +10,8 @@ use tokio;
 use crate::repo;
 use crate::{db, utils};
 
-use crate::db::Db;
-use chrono::format::Fixed::LongMonthName;
-use chrono::{self, Datelike, Month, Utc};
+use chrono::{self, Datelike, Utc};
 use git2::Repository;
-use std::time::Duration;
 
 const CONFIG_FILE_NAME: &str = ".timesheet-gen.txt";
 
@@ -70,7 +65,7 @@ impl Make for Config {
         // get back random string and create path
         // output path to user - e.g https://timesheet-gen.io/jh57y84hk
 
-        let db: Db = db::Db::new().await?;
+        let db = db::Db::new().await?;
         let collection = db
             .client
             .database("timesheet-gen")
@@ -90,16 +85,30 @@ impl Make for Config {
             "address" : user_data.address,
         };
 
-        let index_model = IndexModel::builder()
-            .keys(doc! {"creation_date": 1})
-            .options(
-                IndexOptions::builder()
-                    .expire_after(Duration::new(180, 0))
-                    .build(),
-            )
-            .build();
+        // Check for existing index for TTL on the collection
+        let index_names = collection.list_index_names().await?;
 
-        &collection.create_index(index_model, None);
+        if !index_names.contains(&String::from("expiration_date")) {
+            // create TTL index to expire documents after 30 minutes
+            db.client
+                .database("timesheet-gen")
+                .run_command(
+                    doc! {
+                        "createIndexes": "timesheet-temp-paths",
+                        "indexes": [
+                            {
+                                "key": { "creation_date": 1 },
+                                "name": "expiration_date",
+                                "expireAfterSeconds": 1800,
+                                "unique": true
+                            },
+                        ]
+                    },
+                    None,
+                )
+                .await?;
+        }
+
         collection.insert_one(timesheet.clone(), None).await?;
 
         println!(
@@ -200,7 +209,7 @@ impl Config {
         ];
 
         let month_num = Utc::now().month() as usize;
-        months[month_num].replace("\"", "")
+        months[month_num - 1].replace("\"", "")
     }
 
     fn get_filepath(&self) -> String {
