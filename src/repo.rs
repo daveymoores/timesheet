@@ -3,6 +3,7 @@ use exitcode;
 use regex;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value};
 use std::error::Error;
 use std::fs::File;
 use std::io::Write;
@@ -21,6 +22,7 @@ pub struct Repo {
     pub client_name: String,
     pub contact_person: String,
     pub address: String,
+    pub timesheet: Map<String, Value>,
 }
 
 //TODO: get date out of the repository object
@@ -33,6 +35,7 @@ impl Repo {
         client_name: String,
         contact_person: String,
         address: String,
+        timesheet: Map<String, Value>,
     ) -> Result<Repo, regex::Error> {
         let mut namespace = String::new();
         // Get repo name by finding the name of the root directory
@@ -62,6 +65,7 @@ impl Repo {
             client_name,
             contact_person,
             address,
+            timesheet,
         })
     }
 
@@ -132,6 +136,7 @@ mod tests {
             client_name: "".to_string(),
             contact_person: "".to_string(),
             address: "".to_string(),
+            timesheet: Map::new(),
         };
 
         let repo = Repo::new(
@@ -142,6 +147,7 @@ mod tests {
             "".to_string(),
             "".to_string(),
             "".to_string(),
+            Map::new(),
         );
         assert_eq!(repo.unwrap().namespace, mock_repo.namespace);
     }

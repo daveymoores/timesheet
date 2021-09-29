@@ -12,9 +12,7 @@ use crate::{db, utils};
 
 use chrono::{self, Datelike, Utc};
 use git2::Repository;
-use regex::{Captures, Match, SubCaptureMatches};
 use serde_json::{json, Map, Value};
-use std::collections::{HashMap, HashSet};
 use std::process::Command;
 
 const CONFIG_FILE_NAME: &str = ".timesheet-gen.txt";
@@ -61,14 +59,6 @@ impl Make for Config {
         println!("Generating timesheet for {}...", self.parse_month_string());
 
         let user_data: repo::Repo = self.find_user_data()?;
-        // set environment vars
-        // connect to mongodb
-        // generate random string to use as path
-        // check for existing random string. If it exists, generate another
-        // push config file as json into storage
-        // set TTF in mongodb and trash this after 30 minutes
-        // get back random string and create path
-        // output path to user - e.g https://timesheet-gen.io/jh57y84hk
 
         let db = db::Db::new().await?;
         let collection = db
@@ -77,6 +67,11 @@ impl Make for Config {
             .collection("timesheet-temp-paths");
 
         let random_path = db.generate_random_path(&collection).await?;
+
+        // example of how to convert to json
+        // let timesheet = json!(user_data.timesheet).to_string();
+        // let json: Map<String, Value> = serde_json::from_str(&timesheet)?;
+        // println!("{:#?}", json);
 
         let timesheet = doc! {
             "creation_date": Utc::now(),
@@ -87,7 +82,7 @@ impl Make for Config {
             "path" : user_data.path,
             "client_name" : user_data.client_name,
             "client_contact_person" : user_data.contact_person,
-            "address" : user_data.address,
+            "address" : json!(user_data.timesheet).to_string(),
         };
 
         // Check for existing index for TTL on the collection
@@ -240,7 +235,7 @@ impl Config {
         let config_details: repo::Repo = serde_json::from_str(&*buffer)?;
         let repository = Repository::open(config_details.path)?;
         let path = repository.path();
-        self.build_months_from_git_log(&config_details.name, path)?;
+        let timesheet = self.build_months_from_git_log(&config_details.name, path)?;
         let repo = repo::Repo::new(
             Some(config_details.namespace),
             path,
@@ -249,13 +244,18 @@ impl Config {
             config_details.client_name,
             config_details.contact_person,
             config_details.address,
+            timesheet,
         )?;
 
         Ok(repo)
     }
 
     // TODO not performant to have regex here. Consider memoization through lazy static
-    fn build_months_from_git_log(&self, name: &String, path: &Path) -> Result<(), Box<dyn Error>> {
+    fn build_months_from_git_log(
+        &self,
+        name: &String,
+        path: &Path,
+    ) -> Result<Map<String, Value>, Box<dyn Error>> {
         let command = String::from("--author");
         let author = [command, name.to_owned()].join("=");
         let output = Command::new("git")
@@ -267,26 +267,11 @@ impl Config {
             .output()
             .expect("Failed to execute command");
 
-        //captures the longform date from commits
-        let date_regex =
-            regex::Regex::new(r"([\w]{3}\s){2}[\d]{1,2}\s(\d+:?){3}\s\d{4}\s[+|-]?\d{4}")?;
-
         let output_string = String::from_utf8(output.stdout)?;
 
-        // use a hashset here as we only want unique dates
-        let matches: HashSet<&str> = date_regex
-            .find_iter(&*output_string)
-            .map(|x| x.as_str())
-            .collect();
-
-        println!("{:#?}", matches);
-
         // group commit dates by year and by month
-        let year_regex = regex::Regex::new(r"(\s(20|19){1}[0-9]{2}\s)")?;
-        let year_matches: HashSet<&str> = year_regex
-            .find_iter(&*output_string)
-            .map(|x| x.as_str().trim())
-            .collect();
+        let year_regex = String::from(r"(\s(?P<year>(20|19){1}[0-9]{2})\s)");
+        let year_matches = utils::find_named_matches(year_regex, &output_string);
 
         let mut year_map = Map::new();
 
@@ -323,8 +308,7 @@ impl Config {
             year_map.insert(year.to_string(), Value::Object(month_map));
         }
 
-        println!("{:#?}", year_map);
-        Ok(())
+        Ok(year_map)
     }
 
     // TODO allow the user to edit these values

@@ -6,7 +6,7 @@ use crate::mock_repo_dep::MockRepository as Repository;
 #[cfg(not(test))]
 use git2::Repository;
 
-use serde_json::json;
+use serde_json::Map;
 
 use std::error::Error;
 use std::{io, process};
@@ -58,6 +58,7 @@ pub fn find_repository_details(path: &str) -> Result<repo::Repo, Box<dyn Error>>
         "".to_string(),
         "".to_string(),
         "".to_string(),
+        Map::new(),
     )?)
 }
 
@@ -196,6 +197,7 @@ mod tests {
             "".to_string(),
             "".to_string(),
             "".to_string(),
+            Map::new(),
         );
         assert_eq!(
             find_repository_details("/path/to/.git/").unwrap(),
