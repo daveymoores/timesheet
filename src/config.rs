@@ -1,4 +1,5 @@
 extern crate bson;
+
 use mongodb::bson::doc;
 use std::error::Error;
 use std::fs::File;
@@ -82,7 +83,8 @@ impl Make for Config {
             "path" : user_data.path,
             "client_name" : user_data.client_name,
             "client_contact_person" : user_data.contact_person,
-            "address" : json!(user_data.timesheet).to_string(),
+            "address" : user_data.address,
+            "timesheet" : json!(user_data.timesheet).to_string(),
         };
 
         // Check for existing index for TTL on the collection

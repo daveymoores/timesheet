@@ -1,3 +1,6 @@
+extern crate dotenv;
+
+use dotenv::dotenv;
 use futures::TryStreamExt;
 use mongodb::options::{ClientOptions, ResolverConfig};
 use mongodb::{bson::doc, options::FindOptions};
@@ -12,6 +15,8 @@ pub struct Db {
 
 impl Db {
     pub async fn new() -> Result<Db, Box<dyn Error>> {
+        dotenv().ok();
+
         let client_uri =
             env::var("MONGODB_URI").expect("You must set the MONGODB_URI environment var!");
 
